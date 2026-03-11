@@ -62,15 +62,30 @@ cover/
 *.pt
 *.onnx
 *.weights
+models/
+!models/yolo11n_ncnn_model/
 
 # Videos and Media
 *.mp4
 *.avi
 *.mkv
+*.webm
+*.mov
+test_videos/
 
 # Application specific
 eco_log.csv
 result.mp4
+*.log
 
-# OS
+# Python / IDE
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+venv/
+.vscode/
+.idea/
 .DS_Store
+*.Identifier

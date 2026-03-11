@@ -18,7 +18,8 @@ Usage (on the Pi over SSH)
 
 Optional flags
 ──────────────
-  --url          IP Webcam stream  (required)
+  --url          IP Webcam stream URL
+  --cam          Physical webcam index (e.g. 0)
   --no-preview   Headless: skip cv2.imshow  (use when running over SSH)
   --no-gpio      Disable GPIO (desktop / CI testing)
   --conf         YOLO detection confidence threshold   (default 0.35)
@@ -52,7 +53,7 @@ from accident_detection  import AccidentDetector
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-MODEL_PATH          = "models/yolo11n.onnx"   # TFLite — Best for RPi5
+MODEL_PATH          = "models/yolo11n_ncnn_model"   # NCNN — Best for RPi5
 VEHICLE_CLASS_IDS   = list(VEHICLE_CLASSES.keys())   # [2, 3, 5, 7]
 GREEN_HOLD_DEFAULT  = 10.0   # seconds to keep green after ambulance last seen
 
@@ -111,17 +112,22 @@ def run(args: argparse.Namespace) -> None:
     model = YOLO(MODEL_PATH, task="detect")
     print("[EcoFlow] Model ready.\n")
 
-    # ── Stream ────────────────────────────────────────────────────────────────
-    print(f"[EcoFlow] Connecting: {args.url}")
-    cap = cv2.VideoCapture(args.url)
+    # ── Source ────────────────────────────────────────────────────────────────
+    if args.cam is not None:
+        print(f"[EcoFlow] Connecting physical webcam index: {args.cam}")
+        cap = cv2.VideoCapture(args.cam)
+        source_name = f"Webcam {args.cam}"
+    else:
+        print(f"[EcoFlow] Connecting: {args.url}")
+        cap = cv2.VideoCapture(args.url)
+        source_name = args.url
+
     if not cap.isOpened():
         sys.exit(
-            f"\n[ERROR] Cannot open stream: {args.url}\n"
-            "  • Make sure 'IP Webcam' app is running on your phone.\n"
-            "  • Try:  http://<phone-ip>:8080/video\n"
-            "  • Or:   rtsp://<phone-ip>:8080/h264_ulaw.sdp\n"
+            f"\n[ERROR] Cannot open stream: {source_name}\n"
+            "  • Make sure the camera is connected or 'IP Webcam' app is running.\n"
         )
-    print("[EcoFlow] Stream open.\n")
+    print(f"[EcoFlow] {source_name} open.\n")
 
     # ── GPIO Traffic Light ────────────────────────────────────────────────────
     light = TrafficLight(no_gpio=args.no_gpio)
@@ -273,6 +279,8 @@ def _args() -> argparse.Namespace:
         description="EcoFlow AI — Raspberry Pi 5 live traffic monitor")
     p.add_argument("--url", default="http://172.20.38.70:8080/video",
                    help="IP Webcam stream URL (default: http://172.20.38.70:8080/video)")
+    p.add_argument("--cam", type=int, default=None,
+                   help="Physical webcam index (e.g. 0)")
     p.add_argument("--width",  type=int, default=640)
     p.add_argument("--height", type=int, default=360)
     p.add_argument("--conf",   type=float, default=0.35,
