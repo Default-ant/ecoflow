@@ -12,6 +12,7 @@ Heuristics:
 
 import time
 import collections
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 # ── Tunable constants ────────────────────────────────────────────────────────
@@ -103,4 +104,3 @@ class AccidentDetector:
         return self.confirmed_accidents
 
 # Helper for integration
-from dataclasses import dataclass
