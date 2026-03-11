@@ -112,20 +112,27 @@ def run(args: argparse.Namespace) -> None:
     model = YOLO(MODEL_PATH, task="detect")
     print("[EcoFlow] Model ready.\n")
 
-    # ── Source ────────────────────────────────────────────────────────────────
+    # ── Source Selection ──────────────────────────────────────────────────────
     if args.cam is not None:
-        print(f"[EcoFlow] Connecting physical webcam index: {args.cam}")
-        cap = cv2.VideoCapture(args.cam)
         source_name = f"Webcam {args.cam}"
-    else:
-        print(f"[EcoFlow] Connecting: {args.url}")
-        cap = cv2.VideoCapture(args.url)
+        source_id = args.cam
+    elif args.url is not None:
         source_name = args.url
+        source_id = args.url
+    else:
+        # Final fallback: physical webcam 0
+        print("[EcoFlow] No source specified, falling back to physical webcam 0.")
+        source_name = "Webcam 0 (Fallback)"
+        source_id = 0
+
+    print(f"[EcoFlow] Connecting to: {source_name}")
+    cap = cv2.VideoCapture(source_id)
 
     if not cap.isOpened():
         sys.exit(
             f"\n[ERROR] Cannot open stream: {source_name}\n"
-            "  • Make sure the camera is connected or 'IP Webcam' app is running.\n"
+            "  • Check connections (USB/Network).\n"
+            "  • For physical cams, try --cam 1 or --cam 2 if 0 fails.\n"
         )
     print(f"[EcoFlow] {source_name} open.\n")
 
@@ -277,8 +284,8 @@ def run(args: argparse.Namespace) -> None:
 def _args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="EcoFlow AI — Raspberry Pi 5 live traffic monitor")
-    p.add_argument("--url", default="http://172.20.38.70:8080/video",
-                   help="IP Webcam stream URL (default: http://172.20.38.70:8080/video)")
+    p.add_argument("--url", default=None,
+                   help="IP Webcam stream URL (e.g. http://192.168.1.50:8080/video)")
     p.add_argument("--cam", type=int, default=None,
                    help="Physical webcam index (e.g. 0)")
     p.add_argument("--width",  type=int, default=640)
