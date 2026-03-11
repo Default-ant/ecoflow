@@ -177,6 +177,7 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                 verbose   = False,
             )
 
+            ids, xyxy, clsids, confs = [], [], [], []
             ambulance_in_frame = False
             tracks             = []
 
@@ -234,30 +235,25 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                           f"Pollution={eco_status.pollution_index:.1f}  "
                           f"Veg={eco_status.vegetation_pct:.1f}%")
 
-            # ── 5. Optional preview ───────────────────────────────────────────
-            if not args.no_preview:
-                if results and results[0].boxes is not None:
+            # ── 5. Visual Feedback / Streamer ──────────────────────────────────
+            # Only draw if we need to show the frame (either via GUI or Web)
+            if not args.no_preview or args.stream:
+                if ids:
                     _draw_boxes(frame, ids, xyxy, clsids, confs,
                                 amb_state.confirmed)
                 
                 # Draw accident overlay
                 for acc_id in accidents:
-                    # Find box for this ID
-                    if accidents and results and results[0].boxes is not None:
-                         # Simple text for now, could be improved
-                         cv2.putText(frame, "!!! ACCIDENT !!!", (10, 100), 
-                                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
+                    cv2.putText(frame, "!!! ACCIDENT !!!", (10, 100), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
 
                 _draw_status_bar(frame, light.state,
                                  len(amb_state.confirmed),
                                  last_eco_risk_label, frame_idx)
 
-            # ── 5. Push to Stream / Preview ──────────────────────────────────
-            if args.stream:
-                from web_stream import streamer
-                # If we were headless, we still need to draw status etc for the web view
-                # (handled above just before this block)
-                streamer.update_frame(frame)
+                if args.stream:
+                    from web_stream import streamer
+                    streamer.update_frame(frame)
 
             if not args.no_preview:
                 try:
