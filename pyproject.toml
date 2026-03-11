@@ -9,6 +9,8 @@ dependencies = [
     "ultralytics>=8.0.0",
     "requests>=2.31.0",
     "numpy>=1.24.0,<2.0.0",
+    "torch==2.1.0",
+    "torchvision==0.16.0",
     "gpiozero>=2.0",
     "lgpio>=0.2.2.0",
     "lapx>=0.5.2",
