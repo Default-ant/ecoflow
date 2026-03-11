@@ -1,23 +1,27 @@
 import sys
 import os
 
+# Force unbuffered output so we see text even during a crash
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(line_buffering=True)
+
 def test_step(name, func):
     print(f"Testing {name:.<30}", end="", flush=True)
     try:
         func()
-        print("[OK]")
+        print("[OK]", flush=True)
     except Exception as e:
-        print(f"[FAIL] - {e}")
-    except BaseException as e:
-        print(f"[CRASH] - Received signal/exit {type(e).__name__}")
+        print(f"[FAIL] - {e}", flush=True)
 
-print("=== Raspberry Pi 5 Dependency Diagnostic ===\n")
+print("=== Raspberry Pi 5 Dependency Diagnostic ===\n", flush=True)
 
-# 1. Imports
+# 1. Imports - One by one with immediate flushing
+print("Checking imports...", flush=True)
 test_step("Import NumPy",   lambda: __import__("numpy"))
 test_step("Import CV2",     lambda: __import__("cv2"))
 test_step("Import Torch",   lambda: __import__("torch"))
 test_step("Import NCNN",    lambda: __import__("ncnn"))
+test_step("Import Flask",   lambda: __import__("flask"))
 test_step("Import Ultralytics", lambda: __import__("ultralytics"))
 
 # 2. Hardware Checks
