@@ -136,6 +136,13 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
         )
     print(f"[EcoFlow] {source_name} open.\n")
 
+    # ── Web Streamer ──────────────────────────────────────────────────────────
+    if args.stream:
+        from threading import Thread
+        from web_stream import streamer, start_server
+        print(f"[EcoFlow] Starting web streamer on http://0.0.0.0:5000")
+        Thread(target=start_server, daemon=True).start()
+
     # ── Per-session state ─────────────────────────────────────────────────────
     amb_state           = AmbulanceState()
     accident_detector   = AccidentDetector()
@@ -244,6 +251,15 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                 _draw_status_bar(frame, light.state,
                                  len(amb_state.confirmed),
                                  last_eco_risk_label, frame_idx)
+
+            # ── 5. Push to Stream / Preview ──────────────────────────────────
+            if args.stream:
+                from web_stream import streamer
+                # If we were headless, we still need to draw status etc for the web view
+                # (handled above just before this block)
+                streamer.update_frame(frame)
+
+            if not args.no_preview:
                 try:
                     cv2.imshow("EcoFlow AI", frame)
                     if cv2.waitKey(1) & 0xFF == ord("q"):
@@ -297,6 +313,8 @@ def _args() -> argparse.Namespace:
                    help="Disable GPIO (for desktop testing)")
     p.add_argument("--no-preview", action="store_true",
                    help="Disable cv2.imshow (headless SSH mode)")
+    p.add_argument("--stream",     action="store_true",
+                   help="Enable MJPEG web stream on port 5000")
     return p.parse_args()
 
 
