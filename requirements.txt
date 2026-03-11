@@ -1,0 +1,15 @@
+# EcoFlow AI — Raspberry Pi 5 dependencies
+# Install with:  pip install -r requirements.txt
+
+# ── Core AI / Vision ──────────────────────────────────────────────────────────
+ultralytics>=8.0.0          # YOLOv8 (downloads yolov8n.pt on first run)
+opencv-python>=4.8.0        # cv2 — frame decoding & display
+
+# ── Camera fetching ───────────────────────────────────────────────────────────
+requests>=2.31.0            # HTTP fetch for IP Webcam JPEG frames
+numpy>=1.24.0               # Array handling for frame decoding
+
+# ── GPIO (Raspberry Pi OS only) ───────────────────────────────────────────────
+gpiozero>=2.0               # TrafficLights abstraction
+# lgpio is the recommended backend for Raspberry Pi 5:
+lgpio>=0.2.2.0
