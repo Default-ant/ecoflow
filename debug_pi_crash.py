@@ -1,5 +1,6 @@
 import sys
 import os
+import platform
 
 # Force unbuffered output so we see text even during a crash
 if hasattr(sys.stdout, 'reconfigure'):
@@ -14,6 +15,10 @@ def test_step(name, func):
         print(f"[FAIL] - {e}", flush=True)
 
 print("=== Raspberry Pi 5 Dependency Diagnostic ===\n", flush=True)
+print(f"Machine:      {platform.machine()}", flush=True)
+print(f"Architecture: {platform.architecture()}", flush=True)
+print(f"Python:       {sys.version.split()[0]}", flush=True)
+print("-" * 40, flush=True)
 
 # 1. Imports - One by one with immediate flushing
 print("Checking imports...", flush=True)
