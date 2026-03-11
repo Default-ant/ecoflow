@@ -106,7 +106,7 @@ def _draw_status_bar(frame: np.ndarray, light_state: str,
 # Main loop
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run(args: argparse.Namespace) -> None:
+def run(args: argparse.Namespace, light: TrafficLight) -> None:
     # ── Model ─────────────────────────────────────────────────────────────────
     print(f"[EcoFlow] Loading  : {MODEL_PATH}")
     model = YOLO(MODEL_PATH, task="detect")
@@ -135,9 +135,6 @@ def run(args: argparse.Namespace) -> None:
             "  • For physical cams, try --cam 1 or --cam 2 if 0 fails.\n"
         )
     print(f"[EcoFlow] {source_name} open.\n")
-
-    # ── GPIO Traffic Light ────────────────────────────────────────────────────
-    light = TrafficLight(no_gpio=args.no_gpio)
 
     # ── Per-session state ─────────────────────────────────────────────────────
     amb_state           = AmbulanceState()
@@ -266,15 +263,12 @@ def run(args: argparse.Namespace) -> None:
     except KeyboardInterrupt:
         print("\n[EcoFlow] Interrupted.")
     finally:
-        print("\n[EcoFlow] Shutting down …")
         cap.release()
-        light.set_red()
-        light.cleanup()
         try:
             cv2.destroyAllWindows()
         except Exception:
             pass
-        print("[EcoFlow] Stopped cleanly. Goodbye.")
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -307,4 +301,20 @@ def _args() -> argparse.Namespace:
 
 
 if __name__ == "__main__":
-    run(_args())
+    args = _args()
+    # ── Global Cleanup Protection ─────────────────────────────────────────────
+    # We initialize light here so we can guarentee cleanup even if run() crashes
+    from signal_controller import TrafficLight
+    light = TrafficLight(no_gpio=args.no_gpio)
+    
+    try:
+        run(args, light)
+    except Exception as e:
+        print(f"\n[CRITICAL ERROR] Application crashed: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        print("\n[EcoFlow] Emergency cleanup: Turning off LEDs...")
+        light.cleanup()
+        print("[EcoFlow] Cleanup complete. System stopped.")
+
