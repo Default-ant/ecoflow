@@ -45,7 +45,7 @@ from ultralytics import YOLO
 
 # ── EcoFlow AI modules ────────────────────────────────────────────────────────
 from ambulance_detection import AmbulanceState, check_track, build_tracks_list
-from signal_controller   import TrafficLight, VEHICLE_CLASSES, get_signal_phase
+from signal_controller   import TrafficLight, VEHICLE_CLASSES, AdaptiveController
 from eco_risk            import assess_eco_risk, draw_eco_overlay
 from accident_detection  import AccidentDetector
 
@@ -144,9 +144,10 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
         Thread(target=start_server, daemon=True).start()
 
     # ── Per-session state ─────────────────────────────────────────────────────
+    from signal_controller import DEFAULT_GREEN_TIME
     amb_state           = AmbulanceState()
     accident_detector   = AccidentDetector()
-    last_ambulance_time = 0.0
+    controller          = AdaptiveController(green_time=DEFAULT_GREEN_TIME)
     last_eco_risk_label = None
     frame_idx           = 0
 
@@ -211,17 +212,12 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
             if accidents:
                 print(f"\n[EcoFlow] 🚨 ACCIDENT DETECTED: IDs={list(accidents)}")
 
-            # ── 3. Traffic-light GPIO control ────────────────────────────────
-            now = time.time()
-            if ambulance_in_frame:
-                last_ambulance_time = now
-                if light.state != "green":
-                    light.set_green()
-            elif now - last_ambulance_time < args.green_hold:
-                pass   # hold green; ambulance just left frame
-            else:
-                if light.state != "red":
-                    light.set_red()
+            # ── 3. Adaptive Traffic-light Logic ─────────────────────────────
+            densities = controller._get_densities(tracks)
+            green_lane, reason = controller.get_decision(tracks)
+            
+            # Update physical LEDs
+            light.update_4way(green_lane)
 
             # ── 4. Eco risk assessment (every N frames) ───────────────────────
             if frame_idx % args.eco_every == 0 and tracks:
@@ -236,8 +232,11 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                           f"Veg={eco_status.vegetation_pct:.1f}%")
 
             # ── 5. Visual Feedback / Streamer ──────────────────────────────────
-            # Only draw if we need to show the frame (either via GUI or Web)
             if not args.no_preview or args.stream:
+                # Draw ROI Overlay with Signal Status
+                from signal_controller import draw_rois
+                draw_rois(frame, green_lane, densities, reason, controller.state.remaining_time)
+
                 if ids:
                     _draw_boxes(frame, ids, xyxy, clsids, confs,
                                 amb_state.confirmed)
@@ -247,7 +246,7 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                     cv2.putText(frame, "!!! ACCIDENT !!!", (10, 100), 
                                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
 
-                _draw_status_bar(frame, light.state,
+                _draw_status_bar(frame, f"LANE {green_lane} ({reason})",
                                  len(amb_state.confirmed),
                                  last_eco_risk_label, frame_idx)
 

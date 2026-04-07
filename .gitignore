@@ -78,6 +78,11 @@ eco_log.csv
 result.mp4
 *.log
 
+# Presentation
+*.pptx
+presentation_content.md
+gen_presentation.py
+
 # Python / IDE
 __pycache__/
 *.py[cod]

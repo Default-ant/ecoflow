@@ -15,5 +15,6 @@ dependencies = [
     "lgpio>=0.2.2.0",
     "lapx>=0.5.2",
     "ncnn>=1.0.13",
-    "flask>=3.0.0"
+    "flask>=3.0.0",
+    "python-pptx>=1.0.2",
 ]
