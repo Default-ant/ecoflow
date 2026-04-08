@@ -259,15 +259,20 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
             # ── 3. Adaptive Traffic-light Logic ─────────────────────────────
             h, w = frame.shape[:2]
             
+            # --- DYNAMIC FOCUS CONTROL (v5.0) ---
+            # Check if there is a web-controlled focus OR a CLI focus
+            from web_stream import streamer
+            effective_lane = streamer.active_lane if streamer.active_lane is not None else args.lane
+            
             # --- SINGLE LANE FOCUS OVERRIDE ---
-            if args.lane is not None:
+            if effective_lane is not None:
                 # Count ALL detections as belonging to the chosen lane
                 raw_densities = [0] * 4
-                raw_densities[args.lane] = len(tracks)
+                raw_densities[effective_lane] = len(tracks)
                 
                 # Check for ambulance anywhere in the frame
                 amb_in_lane = any(t.get("label", "").lower() in EMERGENCY_LABELS for t in tracks)
-                force_emergency_lane = args.lane if amb_in_lane else None
+                force_emergency_lane = effective_lane if amb_in_lane else None
                 
                 densities = raw_densities
                 green_lane, reason = controller.get_decision(tracks, w, h) # keep machinery running
@@ -275,14 +280,14 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                 # Override the machinery's decision for the focused lane
                 if force_emergency_lane is not None:
                     green_lane, reason = force_emergency_lane, "AMBULANCE (FOCUS)"
-                elif raw_densities[args.lane] >= 5: # simple threshold for focus
-                    green_lane, reason = args.lane, "TRAFFIC (FOCUS)"
+                elif raw_densities[effective_lane] >= 5: # simple threshold for focus
+                    green_lane, reason = effective_lane, "TRAFFIC (FOCUS)"
             else:
                 # Normal 4-way ROI Logic
                 densities = controller._get_densities(tracks, w, h)
                 green_lane, reason = controller.get_decision(tracks, w, h)
             
-            # --- CONSOLIDATED VISUALIZATION (v4.1) ---
+            # --- CONSOLIDATED VISUALIZATION (v4.1+) ---
             if args.calibrate or args.stream or not args.no_preview:
                 # 1. Create Annotated Frame (off-screen safe)
                 vis_frame = frame.copy()
@@ -296,13 +301,14 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                     label = f"ID:{tid} {VEHICLE_CLASSES.get(cls_id, 'obj')}"
                     cv2.putText(vis_frame, label, (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
-                # 3. Draw Lane Zone overlays 
+                # 3. Draw Lane Zone overlays (Dynamic cleanup built-in)
                 from signal_controller import draw_rois
-                draw_rois(vis_frame, green_lane, densities, reason, controller.state.remaining_time)
+                draw_rois(vis_frame, green_lane, densities, reason, 
+                          controller.state.remaining_time, focus_lane=effective_lane)
 
                 # 4. Final Status Text
-                from signal_controller import LANE_NAMES
                 st_txt = f"{LANE_NAMES[green_lane]} ({reason}) | AMBS: {len(amb_state.confirmed)}"
+                if effective_lane is not None: st_txt = f"[FOCUS: {LANE_NAMES[effective_lane]}] " + st_txt
                 cv2.putText(vis_frame, st_txt, (10, h-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
                 if args.calibrate:
@@ -325,7 +331,8 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
 
             # Progress heartbeat
             if frame_idx % 30 == 0:
-                focus_prefix = f"Focus={args.lane} | " if args.lane is not None else ""
+                cur_focus = streamer.active_lane if streamer.active_lane is not None else args.lane
+                focus_prefix = f"Focus={cur_focus} | " if cur_focus is not None else ""
                 print(f"\r[EcoFlow] f={frame_idx:6d} | {focus_prefix}Ambs={len(amb_state.confirmed)} | {light.status_bar}",
                       end="", flush=True)
 

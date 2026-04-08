@@ -268,19 +268,28 @@ class AdaptiveController:
 # Visualisation Support (Compatibility with original draw_rois)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def draw_rois(frame, lane_idx: int, densities: List[int], reason: str, remaining: float):
+def draw_rois(frame, lane_idx: int, densities: List[int], reason: str, remaining: float, focus_lane: int = None):
     import cv2
     h, w = frame.shape[:2]
     rois = get_lane_rois(w, h)
     overlay = frame.copy()
+    
     for i, roi in enumerate(rois):
+        # If in Focus Mode, skip drawing lanes that aren't the focused one
+        if focus_lane is not None and i != focus_lane:
+            continue
+
         pts = np.array(roi, dtype=np.int32)
         color = (0, 255, 0) if i == lane_idx else (80, 80, 80)
         if "AMBULANCE" in reason and i == lane_idx:
             color = (0, 0, 255) # Red for emergency
         
-        cv2.fillPoly(overlay, [pts], color)
-        cv2.polylines(frame, [pts], True, color, 2)
+        # In focus mode, we can make the box slightly more prominent
+        thickness = 4 if focus_lane is not None else 2
+        cv2.polylines(frame, [pts], True, color, thickness)
+        
+        if focus_lane is None:
+            cv2.fillPoly(overlay, [pts], color)
 
         cx = int(np.mean([p[0] for p in roi]))
         cy = int(np.mean([p[1] for p in roi]))
@@ -288,7 +297,12 @@ def draw_rois(frame, lane_idx: int, densities: List[int], reason: str, remaining
         if i == lane_idx:
             txt += f" ({reason} - {remaining:.1f}s)"
         
-        font_scale = max(0.3, w / 800)
+        font_scale = max(0.4, w / 800)
         cv2.putText(frame, txt, (cx - 40, cy), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), 1)
 
-    cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)
+    if focus_lane is None:
+        cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)
+    else:
+        # Add a Focus Banner
+        f_txt = f"FOCUS MODE: {LANE_NAMES[focus_lane]}"
+        cv2.putText(frame, f_txt, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
