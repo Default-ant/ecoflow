@@ -269,17 +269,17 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
             effective_lane = streamer.active_lane if streamer.active_lane is not None else args.lane
             
             # --- AUTO-RESET LOGIC (v6.0) ---
-            # If we are in focus mode but see 0 vehicles, start a timer
-            if effective_lane is not None and len(tracks) == 0:
+            # Only auto-reset WEB-selected lanes (not CLI --lane)
+            if streamer.active_lane is not None and args.lane is None and len(tracks) == 0:
                 if focus_idle_start is None:
                     focus_idle_start = time.time()
-                elif time.time() - focus_idle_start > 5.0: # 5 second timeout
+                elif time.time() - focus_idle_start > 5.0:
                     print(f"\n[EcoFlow] Lane {effective_lane} clear — auto-resetting to Normal Cycle.")
                     streamer.active_lane = None
                     effective_lane = None
                     focus_idle_start = None
             else:
-                focus_idle_start = None # Reset timer if anyone is seen
+                focus_idle_start = None
             
             # --- SINGLE LANE FOCUS OVERRIDE ---
             if effective_lane is not None:
