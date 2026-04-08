@@ -38,6 +38,10 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+import os
+
+# Signal to libraries (OpenCV/Qt) that we are running headless
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 import cv2
 import numpy as np
@@ -278,70 +282,46 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                 densities = controller._get_densities(tracks, w, h)
                 green_lane, reason = controller.get_decision(tracks, w, h)
             
-            # --- CALIBRATION & STREAMING ---
-            if args.calibrate or args.stream:
+            # --- CONSOLIDATED VISUALIZATION (v4.1) ---
+            if args.calibrate or args.stream or not args.no_preview:
+                # 1. Create Annotated Frame (off-screen safe)
+                vis_frame = frame.copy()
+                
+                # 2. Draw YOLO Boxes manually 
+                for tid, box, cls_id, conf in zip(ids, xyxy, clsids, confs):
+                    x1, y1, x2, y2 = (int(v) for v in box)
+                    color = (0, 255, 0)
+                    if str(tid) in amb_state.confirmed: color = (0, 0, 255)
+                    cv2.rectangle(vis_frame, (x1, y1), (x2, y2), color, 2)
+                    label = f"ID:{tid} {VEHICLE_CLASSES.get(cls_id, 'obj')}"
+                    cv2.putText(vis_frame, label, (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+
+                # 3. Draw Lane Zone overlays 
                 from signal_controller import draw_rois
-                # Draw YOLO bounding boxes first
-                annotated_frame = results[0].plot() 
-                
-                # Draw Lane Zone overlays on top
-                draw_rois(annotated_frame, green_lane, densities, reason, controller.state.remaining_time)
-                
+                draw_rois(vis_frame, green_lane, densities, reason, controller.state.remaining_time)
+
+                # 4. Final Status Text
+                from signal_controller import LANE_NAMES
+                st_txt = f"{LANE_NAMES[green_lane]} ({reason}) | AMBS: {len(amb_state.confirmed)}"
+                cv2.putText(vis_frame, st_txt, (10, h-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
                 if args.calibrate:
-                    print(f"[Calibration] Saving ROI map to 'roi_calibration.jpg'...")
-                    cv2.imwrite("roi_calibration.jpg", annotated_frame)
-                    print("[Calibration] Done. Exiting.")
+                    cv2.imwrite("roi_calibration.jpg", vis_frame)
                     sys.exit(0)
-                
-                if args.stream:
-                    streamer.update_frame(annotated_frame)
-            
-            # Update physical LEDs
-            light.update_4way(green_lane)
-
-            # ── 4. Eco risk assessment (every N frames) ───────────────────────
-            if frame_idx % args.eco_every == 0 and tracks:
-                eco_status = assess_eco_risk(
-                    frame, tracks, frame_idx=frame_idx,
-                    draw_overlay=not args.no_preview,
-                    log=True, verbose=False)
-                last_eco_risk_label = eco_status.risk_level
-                if eco_status.alert:
-                    print(f"\n[EcoFlow] ⚠  ECO CRITICAL — "
-                          f"Pollution={eco_status.pollution_index:.1f}  "
-                          f"Veg={eco_status.vegetation_pct:.1f}%")
-
-            # ── 5. Visual Feedback / Streamer ──────────────────────────────────
-            if not args.no_preview or args.stream:
-                # Draw ROI Overlay with Signal Status
-                from signal_controller import draw_rois
-                draw_rois(frame, green_lane, densities, reason, controller.state.remaining_time)
-
-                if ids:
-                    _draw_boxes(frame, ids, xyxy, clsids, confs,
-                                amb_state.confirmed)
-                
-                # Draw accident overlay
-                for acc_id in accidents:
-                    cv2.putText(frame, "!!! ACCIDENT !!!", (10, 100), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
-
-                _draw_status_bar(frame, f"LANE {green_lane} ({reason})",
-                                 len(amb_state.confirmed),
-                                 last_eco_risk_label, frame_idx)
 
                 if args.stream:
                     from web_stream import streamer
-                    streamer.update_frame(frame)
+                    streamer.update_frame(vis_frame)
 
-            if not args.no_preview:
-                try:
-                    cv2.imshow("EcoFlow AI", frame)
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
-                        print("[EcoFlow] 'q' pressed — exiting.")
-                        break
-                except Exception:
-                    pass   # headless fallback
+                if not args.no_preview:
+                    try:
+                        cv2.imshow("EcoFlow AI", vis_frame)
+                        cv2.waitKey(1)
+                    except: pass
+
+            # Update physical LEDs
+            light.update_4way(green_lane)
+            
 
             # Progress heartbeat
             if frame_idx % 30 == 0:
