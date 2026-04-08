@@ -142,10 +142,7 @@ class FreshFrameReader:
         return self.cap.isOpened()
 
 def run(args: argparse.Namespace, light: TrafficLight) -> None:
-    # ── Model ─────────────────────────────────────────────────────────────────
-    print(f"[EcoFlow] Loading  : {MODEL_PATH}")
-    model = YOLO(MODEL_PATH, task="detect")
-    print("[EcoFlow] Model ready.\n")
+    # ── Model Prep ────────────────────────────────────────────────────────────
 
     # ── Source Selection ──────────────────────────────────────────────────────
     if args.cam is not None:
@@ -185,11 +182,14 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
     controller          = AdaptiveController(green_time=DEFAULT_GREEN_TIME)
     last_eco_risk_label = None
     print("="*60)
-    print("   [EcoFlow v3.0] REALTIME PERFORMANCE MODE")
+    print("   [EcoFlow v3.1] REALTIME PERFORMANCE MODE")
     print("="*60)
-    print(f"[EcoFlow] Loading  : {MODEL_PATH}")
-    model = YOLO(MODEL_PATH, task="detect")
-    print("[EcoFlow] Model ready.\n")
+    print(f"[EcoFlow] Loading AI: {MODEL_PATH}...")
+    try:
+        model = YOLO(MODEL_PATH, task="detect")
+    except Exception as e:
+        sys.exit(f"\n[CRITICAL] YOLO loading failed: {e}")
+    print("[EcoFlow] AI Brain ready.\n")
     frame_idx           = 0
 
     print("[EcoFlow] Live detection started — Ctrl+C to stop.\n")
@@ -305,8 +305,10 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                 print(f"\r[EcoFlow] f={frame_idx:6d} | Ambs={len(amb_state.confirmed)} | {light.status_bar}",
                       end="", flush=True)
 
-    except KeyboardInterrupt:
-        print("\n[EcoFlow] Interrupted.")
+    except Exception as e:
+        print(f"\n[CRITICAL ERROR] Core loop failed: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         reader.release()
         try:
