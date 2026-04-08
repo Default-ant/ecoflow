@@ -236,8 +236,9 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                         frame, track_id, cls_id,
                         x1, y1, x2, y2, amb_state)
                     if newly_confirmed:
+                        cx_tmp, cy_tmp = (x1 + x2) / 2, (y1 + y2) / 2
                         print(f"\n[EcoFlow] 🚑 Ambulance confirmed:"
-                              f" ID={track_id}  frame={frame_idx}")
+                              f" ID={track_id} at ({int(cx_tmp)}, {int(cy_tmp)})")
 
                 if amb_state.confirmed & set(ids):   # any confirmed amb visible now
                     ambulance_in_frame = True
