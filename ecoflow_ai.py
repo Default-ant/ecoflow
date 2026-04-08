@@ -256,6 +256,16 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
             densities = controller._get_densities(tracks, w, h)
             green_lane, reason = controller.get_decision(tracks, w, h)
             
+            # --- CALIBRATION MODE ---
+            if args.calibrate:
+                print(f"[Calibration] Saving ROI map to 'roi_calibration.jpg'...")
+                from signal_controller import draw_rois
+                cal_frame = frame.copy()
+                draw_rois(cal_frame, green_lane, densities, reason, 0.0)
+                cv2.imwrite("roi_calibration.jpg", cal_frame)
+                print("[Calibration] Done. Exiting.")
+                sys.exit(0)
+            
             # Update physical LEDs
             light.update_4way(green_lane)
 
@@ -347,6 +357,8 @@ def _args() -> argparse.Namespace:
                    help="Disable GPIO (for desktop testing)")
     p.add_argument("--no-preview", action="store_true",
                    help="Disable cv2.imshow (headless SSH mode)")
+    p.add_argument("--calibrate",  action="store_true",
+                   help="Save 'roi_calibration.jpg' with Lane Zones and exit")
     p.add_argument("--stream",     action="store_true",
                    help="Enable MJPEG web stream on port 5000")
     return p.parse_args()
