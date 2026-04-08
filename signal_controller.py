@@ -62,6 +62,14 @@ class TrafficLight:
         self.states = ["red"] * 4
         self.all_red()  # Safe default
 
+    @property
+    def state(self) -> str:
+        """Return a summary string like 'Lane 0 GREEN, others RED'."""
+        green_lanes = [i for i, s in enumerate(self.states) if s == "green"]
+        if green_lanes:
+            return f"Lane {green_lanes[0]} GREEN"
+        return "ALL RED"
+
     def _all_off(self, signal_idx: int):
         for led in self._signals[signal_idx]:
             if led:
@@ -93,11 +101,14 @@ class TrafficLight:
 
     def update_4way(self, green_lane: int):
         """Turn specified lane GREEN, all others RED."""
+        changed = self.states[green_lane] != "green"
         for i in range(4):
             if i == green_lane:
                 self.set_signal(i, "green")
             else:
                 self.set_signal(i, "red")
+        if changed:
+            print(f"[Signal] 🟢 Lane {green_lane} ({LANE_NAMES[green_lane]}) GREEN — others RED")
 
     def cleanup(self):
         for i in range(4):
@@ -112,12 +123,23 @@ class TrafficLight:
 # Section B — Logic State Machine
 # ─────────────────────────────────────────────────────────────────────────────
 
-LANE_ROIS: List[List[Tuple[int, int]]] = [
-    [(400, 0),   (1520, 0),   (1520, 400),  (400, 400)],    # North
-    [(1520, 200), (1920, 200), (1920, 880),  (1520, 880)],  # East
-    [(400, 680),  (1520, 680), (1520, 1080), (400, 1080)], # South
-    [(0, 200),    (400, 200),  (400, 880),   (0, 880)],    # West
+# Normalized ROIs (0.0 - 1.0) — auto-scaled to any resolution
+_LANE_ROIS_NORM = [
+    [(0.21, 0.0),  (0.79, 0.0),  (0.79, 0.37), (0.21, 0.37)],  # North (top)
+    [(0.79, 0.19), (1.0, 0.19),  (1.0, 0.81),  (0.79, 0.81)],  # East  (right)
+    [(0.21, 0.63), (0.79, 0.63), (0.79, 1.0),  (0.21, 1.0)],   # South (bottom)
+    [(0.0, 0.19),  (0.21, 0.19), (0.21, 0.81), (0.0, 0.81)],   # West  (left)
 ]
+
+def get_lane_rois(w: int = 320, h: int = 240) -> List[List[Tuple[int, int]]]:
+    """Return LANE_ROIS scaled to the given frame dimensions."""
+    return [
+        [(int(x * w), int(y * h)) for x, y in roi]
+        for roi in _LANE_ROIS_NORM
+    ]
+
+# Default for backward compatibility
+LANE_ROIS: List[List[Tuple[int, int]]] = get_lane_rois(320, 240)
 
 LANE_NAMES = ["North", "East", "South", "West"]
 EMERGENCY_LABELS = {"ambulance", "fire truck"}
@@ -141,14 +163,14 @@ class AdaptiveController:
         self.state = SignalState()
         self.green_time_default = green_time
 
-    def get_decision(self, tracks: List[dict]) -> Tuple[int, str]:
+    def get_decision(self, tracks: List[dict], frame_w: int = 320, frame_h: int = 240) -> Tuple[int, str]:
         """
         Determines which lane should be green based on current frame data.
         Returns: (lane_index, reason)
         """
         now = time.time()
-        densities = self._get_densities(tracks)
-        emergency_lane = self._get_emergency_lane(tracks)
+        densities = self._get_densities(tracks, frame_w, frame_h)
+        emergency_lane = self._get_emergency_lane(tracks, frame_w, frame_h)
         elapsed = now - self.state.last_switch_time
 
         # 1. Ambulance Priority (Highest)
@@ -184,22 +206,24 @@ class AdaptiveController:
         self.state.remaining_time = max(0.0, self.green_time_default - elapsed)
         return self.state.current_lane, "NORMAL CYCLE"
 
-    def _get_densities(self, tracks: List[dict]) -> List[int]:
+    def _get_densities(self, tracks: List[dict], frame_w: int = 320, frame_h: int = 240) -> List[int]:
         densities = [0] * 4
+        rois = get_lane_rois(frame_w, frame_h)
         for track in tracks:
             cx, cy = track.get("cx", -1), track.get("cy", -1)
-            for i, roi in enumerate(LANE_ROIS):
+            for i, roi in enumerate(rois):
                 if self._point_in_roi(cx, cy, roi):
                     densities[i] += 1
                     break
         return densities
 
-    def _get_emergency_lane(self, tracks: List[dict]) -> Optional[int]:
+    def _get_emergency_lane(self, tracks: List[dict], frame_w: int = 320, frame_h: int = 240) -> Optional[int]:
+        rois = get_lane_rois(frame_w, frame_h)
         for track in tracks:
             label = str(track.get("label", "")).lower()
             if label in EMERGENCY_LABELS:
                 cx, cy = track.get("cx", -1), track.get("cy", -1)
-                for i, roi in enumerate(LANE_ROIS):
+                for i, roi in enumerate(rois):
                     if self._point_in_roi(cx, cy, roi):
                         return i
         return None
@@ -223,8 +247,10 @@ class AdaptiveController:
 
 def draw_rois(frame, lane_idx: int, densities: List[int], reason: str, remaining: float):
     import cv2
+    h, w = frame.shape[:2]
+    rois = get_lane_rois(w, h)
     overlay = frame.copy()
-    for i, roi in enumerate(LANE_ROIS):
+    for i, roi in enumerate(rois):
         pts = np.array(roi, dtype=np.int32)
         color = (0, 255, 0) if i == lane_idx else (80, 80, 80)
         if "AMBULANCE" in reason and i == lane_idx:
@@ -239,6 +265,7 @@ def draw_rois(frame, lane_idx: int, densities: List[int], reason: str, remaining
         if i == lane_idx:
             txt += f" ({reason} - {remaining:.1f}s)"
         
-        cv2.putText(frame, txt, (cx - 80, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        font_scale = max(0.3, w / 800)
+        cv2.putText(frame, txt, (cx - 40, cy), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), 1)
 
     cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)

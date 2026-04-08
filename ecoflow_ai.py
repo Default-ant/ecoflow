@@ -213,8 +213,9 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                 print(f"\n[EcoFlow] 🚨 ACCIDENT DETECTED: IDs={list(accidents)}")
 
             # ── 3. Adaptive Traffic-light Logic ─────────────────────────────
-            densities = controller._get_densities(tracks)
-            green_lane, reason = controller.get_decision(tracks)
+            h, w = frame.shape[:2]
+            densities = controller._get_densities(tracks, w, h)
+            green_lane, reason = controller.get_decision(tracks, w, h)
             
             # Update physical LEDs
             light.update_4way(green_lane)
@@ -293,8 +294,8 @@ def _args() -> argparse.Namespace:
                    help="IP Webcam stream URL (e.g. http://192.168.1.50:8080/video)")
     p.add_argument("--cam", type=int, default=None,
                    help="Physical webcam index (e.g. 0)")
-    p.add_argument("--width",  type=int, default=640)
-    p.add_argument("--height", type=int, default=360)
+    p.add_argument("--width",  type=int, default=320)
+    p.add_argument("--height", type=int, default=240)
     p.add_argument("--conf",   type=float, default=0.35,
                    help="YOLO detection confidence (default 0.35)")
     p.add_argument("--green-hold", type=float, default=GREEN_HOLD_DEFAULT,
