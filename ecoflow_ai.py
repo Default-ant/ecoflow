@@ -146,7 +146,10 @@ class FreshFrameReader:
         return self.cap.isOpened()
 
 def run(args: argparse.Namespace, light: TrafficLight) -> None:
-    # ── Model Prep ────────────────────────────────────────────────────────────
+    # ── Focus Reset Timer ─────────────────────────────────────────────────────
+    focus_idle_start = None  # tracks when current focus lane became empty
+    
+    # ── 1. Warm up ────────────────────────────────────────────────────────────
 
     # ── Source Selection ──────────────────────────────────────────────────────
     if args.cam is not None:
@@ -264,6 +267,19 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
             from web_stream import streamer
             effective_lane = streamer.active_lane if streamer.active_lane is not None else args.lane
             
+            # --- AUTO-RESET LOGIC (v6.0) ---
+            # If we are in focus mode but see 0 vehicles, start a timer
+            if effective_lane is not None and len(tracks) == 0:
+                if focus_idle_start is None:
+                    focus_idle_start = time.time()
+                elif time.time() - focus_idle_start > 5.0: # 5 second timeout
+                    print(f"\n[EcoFlow] Lane {effective_lane} clear — auto-resetting to Normal Cycle.")
+                    streamer.active_lane = None
+                    effective_lane = None
+                    focus_idle_start = None
+            else:
+                focus_idle_start = None # Reset timer if anyone is seen
+            
             # --- SINGLE LANE FOCUS OVERRIDE ---
             if effective_lane is not None:
                 # Count ALL detections as belonging to the chosen lane
@@ -361,9 +377,9 @@ def _args() -> argparse.Namespace:
     p.add_argument("--cam", type=int, default=None,
                    help="Physical webcam index (e.g. 0)")
     p.add_argument("--width",  type=int, default=640)
-    p.add_argument("--height", type=int, default=480)
-    p.add_argument("--conf",   type=float, default=0.35,
-                   help="YOLO detection confidence (default 0.35)")
+    p.add_argument("--height", type=int, default=360)
+    p.add_argument("--conf",   type=float, default=0.25,
+                   help="YOLO detection confidence (default 0.25)")
     p.add_argument("--green-hold", type=float, default=GREEN_HOLD_DEFAULT,
                    dest="green_hold",
                    help=f"Seconds to hold green after ambulance clears "
