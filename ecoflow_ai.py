@@ -360,8 +360,8 @@ def _args() -> argparse.Namespace:
                    help="IP Webcam stream URL (e.g. http://192.168.1.50:8080/video)")
     p.add_argument("--cam", type=int, default=None,
                    help="Physical webcam index (e.g. 0)")
-    p.add_argument("--width",  type=int, default=320)
-    p.add_argument("--height", type=int, default=240)
+    p.add_argument("--width",  type=int, default=640)
+    p.add_argument("--height", type=int, default=480)
     p.add_argument("--conf",   type=float, default=0.35,
                    help="YOLO detection confidence (default 0.35)")
     p.add_argument("--green-hold", type=float, default=GREEN_HOLD_DEFAULT,
