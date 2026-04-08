@@ -191,6 +191,7 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
     accident_detector   = AccidentDetector()
     controller          = AdaptiveController(green_time=DEFAULT_GREEN_TIME)
     last_eco_risk_label = None
+    eco_status          = None
     print("="*60)
     print("   [EcoFlow v3.1] REALTIME PERFORMANCE MODE")
     print("="*60)
@@ -218,7 +219,7 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                 frame,
                 tracker   = "bytetrack.yaml",
                 persist   = True,
-                imgsz     = 320,
+                imgsz     = 640,
                 classes   = VEHICLE_CLASS_IDS,
                 conf      = args.conf,
                 verbose   = False,
@@ -295,12 +296,11 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                 
                 # Override the machinery for the focused lane
                 if force_emergency_lane is not None:
-                    green_lane, reason = force_emergency_lane, "AMBULANCE (FOCUS)"
-                elif raw_densities[effective_lane] >= 3: # even lower traffic threshold
-                    green_lane, reason = effective_lane, "TRAFFIC (FOCUS)"
+                    green_lane, reason = force_emergency_lane, "AMBULANCE"
+                elif raw_densities[effective_lane] >= 5: # HIGH TRAFFIC: 5+ cars
+                    green_lane, reason = effective_lane, "HIGH TRAFFIC"
                 
                 # --- MASTER LOCK (v8.0) ---
-                # Force the controller state so its internal timer staying synchronized
                 controller.state.current_lane = green_lane
                 controller.state.last_switch_time = time.time()
                 controller.state.override_reason = reason
@@ -309,29 +309,40 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                 densities = controller._get_densities(tracks, w, h)
                 green_lane, reason = controller.get_decision(tracks, w, h)
             
-            # --- CONSOLIDATED VISUALIZATION (v4.1+) ---
-            if args.calibrate or args.stream or not args.no_preview:
-                # 1. Create Annotated Frame (off-screen safe)
+            # ── 4. Eco Risk Assessment (every N frames) ──────────────────────
+            if frame_idx % args.eco_every == 0 and tracks:
+                eco_status = assess_eco_risk(
+                    frame, tracks, frame_idx=frame_idx,
+                    draw_overlay=False,
+                    log=True, verbose=False)
+                last_eco_risk_label = eco_status.risk_level
+                if eco_status.alert:
+                    print(f"\n[EcoFlow] ⚠  ECO CRITICAL — "
+                          f"Pollution={eco_status.pollution_index:.1f}  "
+                          f"Veg={eco_status.vegetation_pct:.1f}%")
+
+            # ── 5. Visual Feedback ────────────────────────────────────────────
+            if not args.no_preview or args.stream or args.calibrate:
                 vis_frame = frame.copy()
-                
-                # 2. Draw YOLO Boxes manually 
-                for tid, box, cls_id, conf in zip(ids, xyxy, clsids, confs):
-                    x1, y1, x2, y2 = (int(v) for v in box)
-                    color = (0, 255, 0)
-                    if str(tid) in amb_state.confirmed: color = (0, 0, 255)
-                    cv2.rectangle(vis_frame, (x1, y1), (x2, y2), color, 2)
-                    label = f"ID:{tid} {VEHICLE_CLASSES.get(cls_id, 'obj')}"
-                    cv2.putText(vis_frame, label, (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
-                # 3. Draw Lane Zone overlays (Dynamic cleanup built-in)
+                # Draw YOLO bounding boxes
+                if ids:
+                    _draw_boxes(vis_frame, ids, xyxy, clsids, confs,
+                                amb_state.confirmed)
+
+                # Draw status bar at top
+                _draw_status_bar(vis_frame, light.state,
+                                 len(amb_state.confirmed),
+                                 last_eco_risk_label, frame_idx)
+
+                # Draw eco overlay sidebar (Pollution vs Nature)
+                if eco_status is not None:
+                    draw_eco_overlay(vis_frame, eco_status)
+
+                # Draw lane status bar at bottom (grid-free)
                 from signal_controller import draw_rois
-                draw_rois(vis_frame, green_lane, densities, reason, 
+                draw_rois(vis_frame, green_lane, densities, reason,
                           controller.state.remaining_time, focus_lane=effective_lane)
-
-                # 4. Final Status Text
-                st_txt = f"{LANE_NAMES[green_lane]} ({reason}) | AMBS: {len(amb_state.confirmed)}"
-                if effective_lane is not None: st_txt = f"[FOCUS: {LANE_NAMES[effective_lane]}] " + st_txt
-                cv2.putText(vis_frame, st_txt, (10, h-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
                 if args.calibrate:
                     cv2.imwrite("roi_calibration.jpg", vis_frame)
@@ -349,13 +360,13 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
 
             # Update physical LEDs
             light.update_4way(green_lane)
-            
 
             # Progress heartbeat
             if frame_idx % 30 == 0:
                 cur_focus = streamer.active_lane if streamer.active_lane is not None else args.lane
                 focus_prefix = f"Focus={cur_focus} | " if cur_focus is not None else ""
-                print(f"\r[EcoFlow] f={frame_idx:6d} | {focus_prefix}Ambs={len(amb_state.confirmed)} | {light.status_bar}",
+                eco_txt = f" | Eco={last_eco_risk_label}" if last_eco_risk_label else ""
+                print(f"\r[EcoFlow] f={frame_idx:6d} | {focus_prefix}Ambs={len(amb_state.confirmed)}{eco_txt} | {light.status_bar}",
                       end="", flush=True)
 
     except Exception as e:
@@ -384,8 +395,8 @@ def _args() -> argparse.Namespace:
                    help="Physical webcam index (e.g. 0)")
     p.add_argument("--width",  type=int, default=640)
     p.add_argument("--height", type=int, default=360)
-    p.add_argument("--conf",   type=float, default=0.15,
-                   help="YOLO detection confidence (default 0.15)")
+    p.add_argument("--conf",   type=float, default=0.30,
+                   help="YOLO detection confidence (default 0.30)")
     p.add_argument("--green-hold", type=float, default=GREEN_HOLD_DEFAULT,
                    dest="green_hold",
                    help=f"Seconds to hold green after ambulance clears "

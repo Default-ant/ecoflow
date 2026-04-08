@@ -102,13 +102,13 @@ BLINK_MIN_HITS    = 2           # frames that must exceed threshold
 COLOUR_HISTORY_LEN = 20         # rolling window length in frames
 
 # ── Guards ────────────────────────────────────────────────────────────────────
-MIN_AMBULANCE_W  = 40    # pixels (boosted sensitivity)
-MIN_AMBULANCE_H  = 30    # pixels (boosted sensitivity)
-MAX_ASPECT_RATIO = 3.2   # max width/height
+MIN_AMBULANCE_W  = 80    # minimum bounding-box width  (pixels)
+MIN_AMBULANCE_H  = 60    # minimum bounding-box height (pixels)
+MAX_ASPECT_RATIO = 3.2   # max width/height — excludes wide flat cars
 
 # ── Vote-based confirmation ───────────────────────────────────────────────────
 VOTE_WINDOW    = 8    # rolling window (frames)
-VOTE_THRESHOLD = 2    # lowered from 3 for faster trigger
+VOTE_THRESHOLD = 3    # positives needed within window to confirm
 
 # Fraction of bounding-box height used for the top-strip siren scan
 SIREN_STRIP = 0.22
