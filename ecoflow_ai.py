@@ -293,11 +293,17 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                 densities = raw_densities
                 green_lane, reason = controller.get_decision(tracks, w, h) # keep machinery running
                 
-                # Override the machinery's decision for the focused lane
+                # Override the machinery for the focused lane
                 if force_emergency_lane is not None:
                     green_lane, reason = force_emergency_lane, "AMBULANCE (FOCUS)"
-                elif raw_densities[effective_lane] >= 5: # simple threshold for focus
+                elif raw_densities[effective_lane] >= 3: # even lower traffic threshold
                     green_lane, reason = effective_lane, "TRAFFIC (FOCUS)"
+                
+                # --- MASTER LOCK (v8.0) ---
+                # Force the controller state so its internal timer staying synchronized
+                controller.state.current_lane = green_lane
+                controller.state.last_switch_time = time.time()
+                controller.state.override_reason = reason
             else:
                 # Normal 4-way ROI Logic
                 densities = controller._get_densities(tracks, w, h)
@@ -378,8 +384,8 @@ def _args() -> argparse.Namespace:
                    help="Physical webcam index (e.g. 0)")
     p.add_argument("--width",  type=int, default=640)
     p.add_argument("--height", type=int, default=360)
-    p.add_argument("--conf",   type=float, default=0.25,
-                   help="YOLO detection confidence (default 0.25)")
+    p.add_argument("--conf",   type=float, default=0.15,
+                   help="YOLO detection confidence (default 0.15)")
     p.add_argument("--green-hold", type=float, default=GREEN_HOLD_DEFAULT,
                    dest="green_hold",
                    help=f"Seconds to hold green after ambulance clears "

@@ -203,6 +203,11 @@ class AdaptiveController:
                 self.state.last_switch_time = now
             self.state.override_reason = "AMBULANCE"
             self.state.remaining_time = self.green_time_default
+            
+            # --- MASTER LOCK (v8.0) ---
+            # Force the controller state so its internal timer staying synchronized
+            self.state.current_lane = emergency_lane
+            self.state.last_switch_time = time.time() # Reset timer to prevent rapid flip
             return emergency_lane, "AMBULANCE"
 
         # 2. Dynamic High Traffic Priority
@@ -271,38 +276,21 @@ class AdaptiveController:
 def draw_rois(frame, lane_idx: int, densities: List[int], reason: str, remaining: float, focus_lane: int = None):
     import cv2
     h, w = frame.shape[:2]
-    rois = get_lane_rois(w, h)
+    
+    # Grid System Removed (v8.0)
+    # We only draw a status board and detection boxes.
+    
     overlay = frame.copy()
     
-    for i, roi in enumerate(rois):
-        # If in Focus Mode, skip drawing lanes that aren't the focused one
-        if focus_lane is not None and i != focus_lane:
-            continue
+    # 1. Clean Status Display (Bottom)
+    status_msg = f"LANE: {LANE_NAMES[lane_idx]} ({reason}) | COUNT: {densities[lane_idx]} | {remaining:.1f}s"
+    color = (0, 255, 0)
+    if "AMBULANCE" in reason: color = (0, 0, 255)
+    
+    cv2.rectangle(frame, (0, h-60), (w, h), (30, 30, 30), -1) # Background
+    cv2.putText(frame, status_msg, (20, h-20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
-        pts = np.array(roi, dtype=np.int32)
-        color = (0, 255, 0) if i == lane_idx else (80, 80, 80)
-        if "AMBULANCE" in reason and i == lane_idx:
-            color = (0, 0, 255) # Red for emergency
-        
-        # In focus mode, we can make the box slightly more prominent
-        thickness = 4 if focus_lane is not None else 2
-        cv2.polylines(frame, [pts], True, color, thickness)
-        
-        if focus_lane is None:
-            cv2.fillPoly(overlay, [pts], color)
-
-        cx = int(np.mean([p[0] for p in roi]))
-        cy = int(np.mean([p[1] for p in roi]))
-        txt = f"{LANE_NAMES[i]}: {densities[i]}"
-        if i == lane_idx:
-            txt += f" ({reason} - {remaining:.1f}s)"
-        
-        font_scale = max(0.4, w / 800)
-        cv2.putText(frame, txt, (cx - 40, cy), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), 1)
-
-    if focus_lane is None:
-        cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)
-    else:
-        # Add a Focus Banner
-        f_txt = f"FOCUS MODE: {LANE_NAMES[focus_lane]}"
-        cv2.putText(frame, f_txt, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+    # 2. Focus Mode Indicator
+    if focus_lane is not None:
+        cv2.putText(frame, "LOCKED ON: " + LANE_NAMES[focus_lane], (10, 40), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)

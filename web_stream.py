@@ -29,8 +29,8 @@ class WebStreamer:
         with self.lock:
             if self.frame is None:
                 return None
-            # Encode as JPEG with high quality (90)
-            ret, buffer = cv2.imencode('.jpg', self.frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+            # Encode as JPEG with performance-tuned quality (45)
+            ret, buffer = cv2.imencode('.jpg', self.frame, [int(cv2.IMWRITE_JPEG_QUALITY), 45])
             return buffer.tobytes()
 
 streamer = WebStreamer()
