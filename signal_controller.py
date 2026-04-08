@@ -60,14 +60,14 @@ class TrafficLight:
     def __init__(self, no_gpio: bool = False):
         self._signals = _init_signal_leds(no_gpio)
         self.states = ["red"] * 4
-        self.all_red()  # Safe default
+        self.update_4way(0)  # Start with North GREEN
 
     @property
     def state(self) -> str:
-        """Return a summary string like 'Lane 0 GREEN, others RED'."""
-        green_lanes = [i for i, s in enumerate(self.states) if s == "green"]
-        if green_lanes:
-            return f"Lane {green_lanes[0]} GREEN"
+        """Return a summary string for the heartbeat."""
+        for i, s in enumerate(self.states):
+            if s == "green":
+                return f"Lane {i} (GREEN)"
         return "ALL RED"
 
     def _all_off(self, signal_idx: int):

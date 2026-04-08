@@ -102,9 +102,36 @@ def _draw_status_bar(frame: np.ndarray, light_state: str,
                 cv2.FONT_HERSHEY_SIMPLEX, 0.58, (255, 255, 255), 1, cv2.LINE_AA)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Main loop
-# ─────────────────────────────────────────────────────────────────────────────
+class FreshFrameReader:
+    """A background thread that grabs the latest frame from a source to eliminate lag."""
+    def __init__(self, source):
+        self.cap = cv2.VideoCapture(source)
+        self.ret = False
+        self.frame = None
+        self.stopped = False
+        from threading import Thread
+        self.thread = Thread(target=self._update, args=(), daemon=True)
+
+    def start(self):
+        self.thread.start()
+        return self
+
+    def _update(self):
+        while not self.stopped:
+            if not self.cap.isOpened():
+                self.stopped = True
+                break
+            self.ret, self.frame = self.cap.read()
+
+    def read(self):
+        return self.ret, self.frame
+
+    def release(self):
+        self.stopped = True
+        self.cap.release()
+
+    def is_opened(self):
+        return self.cap.isOpened()
 
 def run(args: argparse.Namespace, light: TrafficLight) -> None:
     # ── Model ─────────────────────────────────────────────────────────────────
@@ -126,15 +153,15 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
         source_id = 0
 
     print(f"[EcoFlow] Connecting to: {source_name}")
-    cap = cv2.VideoCapture(source_id)
+    reader = FreshFrameReader(source_id)
 
-    if not cap.isOpened():
+    if not reader.is_opened():
         sys.exit(
             f"\n[ERROR] Cannot open stream: {source_name}\n"
             "  • Check connections (USB/Network).\n"
-            "  • For physical cams, try --cam 1 or --cam 2 if 0 fails.\n"
         )
-    print(f"[EcoFlow] {source_name} open.\n")
+    reader.start()
+    print(f"[EcoFlow] {source_name} open and buffered.\n")
 
     # ── Web Streamer ──────────────────────────────────────────────────────────
     if args.stream:
@@ -155,24 +182,19 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
 
     try:
         while True:
-            ret, frame = cap.read()
-            if not ret:
-                print("[WARN]  Frame grab failed — retrying …")
-                time.sleep(0.5)
+            # ── 1. YOLO tracking ──────────────────────────────────────────────
+            ret, frame = reader.read()
+            if not ret or frame is None:
                 continue
 
             frame_idx += 1
 
-            # Resize to inference size (reduces CPU load on the Pi)
-            if frame.shape[1] != args.width or frame.shape[0] != args.height:
-                frame = cv2.resize(frame, (args.width, args.height))
-
-            # ── 1. YOLO tracking ──────────────────────────────────────────────
+            # YOLO inference at optimized resolution
             results = model.track(
                 frame,
                 tracker   = "bytetrack.yaml",
                 persist   = True,
-                imgsz     = 640,
+                imgsz     = 320,
                 classes   = VEHICLE_CLASS_IDS,
                 conf      = args.conf,
                 verbose   = False,
@@ -275,10 +297,10 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
     except KeyboardInterrupt:
         print("\n[EcoFlow] Interrupted.")
     finally:
-        cap.release()
+        reader.release()
         try:
             cv2.destroyAllWindows()
-        except Exception:
+        except:
             pass
 
 
