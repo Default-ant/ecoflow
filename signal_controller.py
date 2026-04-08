@@ -60,14 +60,37 @@ class TrafficLight:
     def __init__(self, no_gpio: bool = False):
         self._signals = _init_signal_leds(no_gpio)
         self.states = ["red"] * 4
+        
+        if not no_gpio:
+            self.hardware_test()
+            
         self.update_4way(0)  # Start with North GREEN
+
+    def hardware_test(self):
+        """Diagnostic: Cycle every LED in the system for 0.2s each."""
+        print("[GPIO] 🔍 Running Hardware Diagnostics (12 LEDs)...")
+        for i in range(4):
+            for state in ["red", "yellow", "green"]:
+                self.set_signal(i, state)
+                time.sleep(0.2)
+            self._all_off(i)
+        print("[GPIO] ✅ Diagnostics complete. Starting AI cycle.\n")
+
+    @property
+    def status_bar(self) -> str:
+        """Returns a compact status string like: [ N:🟢 | E:🔴 | S:🔴 | W:🔴 ]"""
+        parts = []
+        for i, name in enumerate(["N", "E", "S", "W"]):
+            st = self.states[i]
+            icon = "🟢" if st == "green" else ("🟡" if st == "yellow" else "🔴")
+            parts.append(f"{name}:{icon}")
+        return f"[ {' | '.join(parts)} ]"
 
     @property
     def state(self) -> str:
-        """Return a summary string for the heartbeat."""
+        """Compatibility/Simple state property."""
         for i, s in enumerate(self.states):
-            if s == "green":
-                return f"Lane {i} (GREEN)"
+            if s == "green": return f"Lane {i}"
         return "ALL RED"
 
     def _all_off(self, signal_idx: int):
@@ -108,7 +131,7 @@ class TrafficLight:
             else:
                 self.set_signal(i, "red")
         if changed:
-            print(f"[Signal] 🟢 Lane {green_lane} ({LANE_NAMES[green_lane]}) GREEN — others RED")
+            print(f"\n[Signal] 🚥 Global State Update: {self.status_bar}")
 
     def cleanup(self):
         for i in range(4):

@@ -103,9 +103,10 @@ def _draw_status_bar(frame: np.ndarray, light_state: str,
 
 
 class FreshFrameReader:
-    """A background thread that grabs the latest frame from a source to eliminate lag."""
+    """A background thread that grabs the absolute latest frame by draining the buffer."""
     def __init__(self, source):
         self.cap = cv2.VideoCapture(source)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) # Force small internal buffer
         self.ret = False
         self.frame = None
         self.stopped = False
@@ -121,7 +122,14 @@ class FreshFrameReader:
             if not self.cap.isOpened():
                 self.stopped = True
                 break
-            self.ret, self.frame = self.cap.read()
+            
+            # Drain the buffer: grab everything currently in the pipe
+            # and only save the very last one.
+            tmp_ret, tmp_frame = self.cap.read()
+            if tmp_ret:
+                self.ret, self.frame = tmp_ret, tmp_frame
+            else:
+                time.sleep(0.01)
 
     def read(self):
         return self.ret, self.frame
@@ -176,6 +184,12 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
     accident_detector   = AccidentDetector()
     controller          = AdaptiveController(green_time=DEFAULT_GREEN_TIME)
     last_eco_risk_label = None
+    print("="*60)
+    print("   [EcoFlow v3.0] REALTIME PERFORMANCE MODE")
+    print("="*60)
+    print(f"[EcoFlow] Loading  : {MODEL_PATH}")
+    model = YOLO(MODEL_PATH, task="detect")
+    print("[EcoFlow] Model ready.\n")
     frame_idx           = 0
 
     print("[EcoFlow] Live detection started — Ctrl+C to stop.\n")
@@ -286,12 +300,9 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                 except Exception:
                     pass   # headless fallback
 
-            # Progress heartbeat
-            if frame_idx % 60 == 0:
-                print(f"\r[EcoFlow] frame={frame_idx:6d}  "
-                      f"ambulances={len(amb_state.confirmed)}  "
-                      f"light={light.state}  "
-                      f"eco={last_eco_risk_label or '—'}",
+            # Progress heartbeat (cleans the line and shows the status bar)
+            if frame_idx % 30 == 0:
+                print(f"\r[EcoFlow] f={frame_idx:6d} | Ambs={len(amb_state.confirmed)} | {light.status_bar}",
                       end="", flush=True)
 
     except KeyboardInterrupt:
