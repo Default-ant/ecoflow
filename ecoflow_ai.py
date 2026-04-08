@@ -219,7 +219,7 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                 frame,
                 tracker   = "bytetrack.yaml",
                 persist   = True,
-                imgsz     = 640,
+                imgsz     = 480,
                 classes   = VEHICLE_CLASS_IDS,
                 conf      = args.conf,
                 verbose   = False,
@@ -264,50 +264,48 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
             h, w = frame.shape[:2]
             
             # --- DYNAMIC FOCUS CONTROL (v5.0) ---
-            # Check if there is a web-controlled focus OR a CLI focus
             from web_stream import streamer
             effective_lane = streamer.active_lane if streamer.active_lane is not None else args.lane
             
             # --- AUTO-RESET LOGIC (v6.0) ---
-            # Only auto-reset WEB-selected lanes (not CLI --lane)
+            # Only auto-reset WEB-selected lanes, with a 10s timeout
             if streamer.active_lane is not None and args.lane is None and len(tracks) == 0:
                 if focus_idle_start is None:
                     focus_idle_start = time.time()
-                elif time.time() - focus_idle_start > 5.0:
-                    print(f"\n[EcoFlow] Lane {effective_lane} clear — auto-resetting to Normal Cycle.")
+                elif time.time() - focus_idle_start > 10.0:
+                    print(f"\n[EcoFlow] Lane {effective_lane} clear for 10s — auto-resetting.")
                     streamer.active_lane = None
-                    effective_lane = None
+                    effective_lane = args.lane  # Fall back to CLI lane (default 0)
                     focus_idle_start = None
             else:
                 focus_idle_start = None
             
-            # --- SINGLE LANE FOCUS OVERRIDE ---
+            # --- FULL-FRAME VEHICLE COUNTING (v9.5) ---
+            # Count ALL vehicles on the entire screen for the focused lane
+            total_vehicles = len(tracks)
+            densities = [0] * 4
             if effective_lane is not None:
-                # Count ALL detections as belonging to the chosen lane
-                raw_densities = [0] * 4
-                raw_densities[effective_lane] = len(tracks)
-                
-                # Check for ambulance anywhere in the frame
-                amb_in_lane = any(t.get("label", "").lower() in EMERGENCY_LABELS for t in tracks)
-                force_emergency_lane = effective_lane if amb_in_lane else None
-                
-                densities = raw_densities
-                green_lane, reason = controller.get_decision(tracks, w, h) # keep machinery running
-                
-                # Override the machinery for the focused lane
-                if force_emergency_lane is not None:
-                    green_lane, reason = force_emergency_lane, "AMBULANCE"
-                elif raw_densities[effective_lane] >= 5: # HIGH TRAFFIC: 5+ cars
-                    green_lane, reason = effective_lane, "HIGH TRAFFIC"
-                
-                # --- MASTER LOCK (v8.0) ---
-                controller.state.current_lane = green_lane
+                densities[effective_lane] = total_vehicles
+            
+            # --- AMBULANCE OVERRIDE (Direct — bypasses ROI) ---
+            ambulance_in_frame = bool(amb_state.confirmed & set(ids))
+            
+            if ambulance_in_frame and effective_lane is not None:
+                green_lane = effective_lane
+                reason = "AMBULANCE"
+                print(f"\r[EcoFlow] 🚨 AMBULANCE OVERRIDE → {LANE_NAMES[green_lane]} GREEN!", end="", flush=True)
+            elif total_vehicles >= 5 and effective_lane is not None:
+                green_lane = effective_lane
+                reason = "HIGH TRAFFIC"
+            else:
+                # Normal round-robin (controller handles the cycle)
+                green_lane, reason = controller.get_decision(tracks, w, h)
+            
+            # Lock the controller state to match our decision
+            controller.state.current_lane = green_lane
+            if reason != "NORMAL CYCLE":
                 controller.state.last_switch_time = time.time()
                 controller.state.override_reason = reason
-            else:
-                # Normal 4-way ROI Logic
-                densities = controller._get_densities(tracks, w, h)
-                green_lane, reason = controller.get_decision(tracks, w, h)
             
             # ── 4. Eco Risk Assessment (every N frames) ──────────────────────
             if frame_idx % args.eco_every == 0 and tracks:
@@ -410,8 +408,8 @@ def _args() -> argparse.Namespace:
                    help="Disable cv2.imshow (headless SSH mode)")
     p.add_argument("--calibrate",  action="store_true",
                    help="Save 'roi_calibration.jpg' with Lane Zones and exit")
-    p.add_argument("--lane",       type=int, choices=[0, 1, 2, 3],
-                   help="Focus camera on a single lane (0:N, 1:E, 2:S, 3:W)")
+    p.add_argument("--lane",       type=int, choices=[0, 1, 2, 3], default=0,
+                   help="Which lane the camera monitors (0:N, 1:E, 2:S, 3:W). Default: 0 (North)")
     p.add_argument("--stream",     action="store_true",
                    help="Enable MJPEG web stream on port 5000")
     return p.parse_args()
