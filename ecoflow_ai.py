@@ -45,7 +45,7 @@ from ultralytics import YOLO
 
 # ── EcoFlow AI modules ────────────────────────────────────────────────────────
 from ambulance_detection import AmbulanceState, check_track, build_tracks_list
-from signal_controller   import TrafficLight, VEHICLE_CLASSES, AdaptiveController
+from signal_controller   import TrafficLight, VEHICLE_CLASSES, AdaptiveController, EMERGENCY_LABELS, LANE_NAMES
 from eco_risk            import assess_eco_risk, draw_eco_overlay
 from accident_detection  import AccidentDetector
 
@@ -254,18 +254,47 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
 
             # ── 3. Adaptive Traffic-light Logic ─────────────────────────────
             h, w = frame.shape[:2]
-            densities = controller._get_densities(tracks, w, h)
-            green_lane, reason = controller.get_decision(tracks, w, h)
             
-            # --- CALIBRATION MODE ---
-            if args.calibrate:
-                print(f"[Calibration] Saving ROI map to 'roi_calibration.jpg'...")
+            # --- SINGLE LANE FOCUS OVERRIDE ---
+            if args.lane is not None:
+                # Count ALL detections as belonging to the chosen lane
+                raw_densities = [0] * 4
+                raw_densities[args.lane] = len(tracks)
+                
+                # Check for ambulance anywhere in the frame
+                amb_in_lane = any(t.get("label", "").lower() in EMERGENCY_LABELS for t in tracks)
+                force_emergency_lane = args.lane if amb_in_lane else None
+                
+                densities = raw_densities
+                green_lane, reason = controller.get_decision(tracks, w, h) # keep machinery running
+                
+                # Override the machinery's decision for the focused lane
+                if force_emergency_lane is not None:
+                    green_lane, reason = force_emergency_lane, "AMBULANCE (FOCUS)"
+                elif raw_densities[args.lane] >= 5: # simple threshold for focus
+                    green_lane, reason = args.lane, "TRAFFIC (FOCUS)"
+            else:
+                # Normal 4-way ROI Logic
+                densities = controller._get_densities(tracks, w, h)
+                green_lane, reason = controller.get_decision(tracks, w, h)
+            
+            # --- CALIBRATION & STREAMING ---
+            if args.calibrate or args.stream:
                 from signal_controller import draw_rois
-                cal_frame = frame.copy()
-                draw_rois(cal_frame, green_lane, densities, reason, 0.0)
-                cv2.imwrite("roi_calibration.jpg", cal_frame)
-                print("[Calibration] Done. Exiting.")
-                sys.exit(0)
+                # Draw YOLO bounding boxes first
+                annotated_frame = results[0].plot() 
+                
+                # Draw Lane Zone overlays on top
+                draw_rois(annotated_frame, green_lane, densities, reason, controller.state.remaining_time)
+                
+                if args.calibrate:
+                    print(f"[Calibration] Saving ROI map to 'roi_calibration.jpg'...")
+                    cv2.imwrite("roi_calibration.jpg", annotated_frame)
+                    print("[Calibration] Done. Exiting.")
+                    sys.exit(0)
+                
+                if args.stream:
+                    streamer.update_frame(annotated_frame)
             
             # Update physical LEDs
             light.update_4way(green_lane)
@@ -314,9 +343,10 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                 except Exception:
                     pass   # headless fallback
 
-            # Progress heartbeat (cleans the line and shows the status bar)
+            # Progress heartbeat
             if frame_idx % 30 == 0:
-                print(f"\r[EcoFlow] f={frame_idx:6d} | Ambs={len(amb_state.confirmed)} | {light.status_bar}",
+                focus_prefix = f"Focus={args.lane} | " if args.lane is not None else ""
+                print(f"\r[EcoFlow] f={frame_idx:6d} | {focus_prefix}Ambs={len(amb_state.confirmed)} | {light.status_bar}",
                       end="", flush=True)
 
     except Exception as e:
@@ -360,6 +390,8 @@ def _args() -> argparse.Namespace:
                    help="Disable cv2.imshow (headless SSH mode)")
     p.add_argument("--calibrate",  action="store_true",
                    help="Save 'roi_calibration.jpg' with Lane Zones and exit")
+    p.add_argument("--lane",       type=int, choices=[0, 1, 2, 3],
+                   help="Focus camera on a single lane (0:N, 1:E, 2:S, 3:W)")
     p.add_argument("--stream",     action="store_true",
                    help="Enable MJPEG web stream on port 5000")
     return p.parse_args()
