@@ -53,7 +53,7 @@ from accident_detection  import AccidentDetector
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-MODEL_PATH          = "models/yolo11n_ncnn_model"   # NCNN — Best for RPi5
+MODEL_PATH          = "models/yolo11n.pt"   # Standard PT — Most stable across RPi OS versions
 VEHICLE_CLASS_IDS   = list(VEHICLE_CLASSES.keys())   # [2, 3, 5, 7]
 GREEN_HOLD_DEFAULT  = 10.0   # seconds to keep green after ambulance last seen
 
@@ -166,7 +166,10 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
             "  • Check connections (USB/Network).\n"
         )
     reader.start()
-    print(f"[EcoFlow] {source_name} open and buffered.\n")
+    print(f"[EcoFlow] {source_name} open and buffered.")
+    print("[EcoFlow] Warming up stream (2s delay)...")
+    time.sleep(2.0)
+    print("")
 
     # ── Web Streamer ──────────────────────────────────────────────────────────
     if args.stream:
