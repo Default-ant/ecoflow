@@ -319,6 +319,14 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                           f"Pollution={eco_status.pollution_index:.1f}  "
                           f"Veg={eco_status.vegetation_pct:.1f}%")
 
+            # --- PUSH DATA TO WEB (v10.0) ---
+            if args.stream:
+                from web_stream import streamer
+                v_pct = eco_status.vegetation_pct if eco_status else 0.0
+                p_idx = eco_status.pollution_index if eco_status else 0.0
+                r_lvl = eco_status.risk_level if eco_status else "WAITING"
+                streamer.update_status(v_pct, p_idx, r_lvl, len(tracks))
+
             # ── 5. Visual Feedback ────────────────────────────────────────────
             if not args.no_preview or args.stream or args.calibrate:
                 vis_frame = frame.copy()
