@@ -41,17 +41,16 @@ import time
 import os
 import socket
 
-def get_local_ip():
-    """Returns the primary local IP address of this device."""
+def get_local_ips():
+    """Returns a list of all local IP addresses of this device."""
+    ips = []
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # Doesn't need to be reachable, just triggers the OS to find local source IP
-        s.connect(('10.255.255.255', 1))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
+        import subprocess
+        result = subprocess.check_output(['hostname', '-I'], text=True)
+        ips = [ip.strip() for ip in result.split() if '.' in ip] # Only IPv4
     except:
-        return '127.0.0.1'
+        ips = ['127.0.0.1']
+    return ips
 
 # Signal to libraries (OpenCV/Qt) that we are running headless
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
@@ -195,10 +194,11 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
     if args.stream:
         from threading import Thread
         from web_stream import streamer, start_server
-        local_ip = get_local_ip()
+        all_ips = get_local_ips()
         print(f"[EcoFlow] Starting web streamer on http://0.0.0.0:5000")
         print(f"============================================================")
-        print(f"   🌐 WEB DASHBOARD: http://{local_ip}:5000")
+        for ip in all_ips:
+            print(f"   🌐 WEB DASHBOARD: http://{ip}:5000")
         print(f"============================================================")
         Thread(target=start_server, daemon=True).start()
 
