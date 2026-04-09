@@ -39,6 +39,19 @@ import argparse
 import sys
 import time
 import os
+import socket
+
+def get_local_ip():
+    """Returns the primary local IP address of this device."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # Doesn't need to be reachable, just triggers the OS to find local source IP
+        s.connect(('10.255.255.255', 1))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return '127.0.0.1'
 
 # Signal to libraries (OpenCV/Qt) that we are running headless
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
@@ -182,7 +195,11 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
     if args.stream:
         from threading import Thread
         from web_stream import streamer, start_server
+        local_ip = get_local_ip()
         print(f"[EcoFlow] Starting web streamer on http://0.0.0.0:5000")
+        print(f"============================================================")
+        print(f"   🌐 WEB DASHBOARD: http://{local_ip}:5000")
+        print(f"============================================================")
         Thread(target=start_server, daemon=True).start()
 
     # ── Per-session state ─────────────────────────────────────────────────────
