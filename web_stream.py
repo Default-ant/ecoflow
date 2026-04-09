@@ -18,21 +18,25 @@ class WebStreamer:
         self.frame = None
         self.lock = Lock()
         self.active_lane = None # None means 4-Way Auto Mode
+        self.effective_lane = 0 # What is actually running
         
         # --- ECO STATUS DATA (v10.0) ---
         self.veg_pct = 0.0
         self.pollution_idx = 0.0
         self.risk_level = "WAITING"
         self.total_cars = 0
+        self.amb_count = 0
         self.last_update = time.time()
 
-    def update_status(self, veg_pct, pollution_idx, risk_level, total_cars):
+    def update_status(self, veg_pct, pollution_idx, risk_level, total_cars, amb_count, effective_lane):
         """Update system status data for the web UI."""
         with self.lock:
             self.veg_pct = veg_pct
             self.pollution_idx = pollution_idx
             self.risk_level = risk_level
             self.total_cars = total_cars
+            self.amb_count = amb_count
+            self.effective_lane = effective_lane
             self.last_update = time.time()
 
     def update_frame(self, frame):
@@ -72,13 +76,17 @@ def video_feed():
 def get_status():
     """Returns current system status as JSON for AJAX polling."""
     with streamer.lock:
+        lane_idx = streamer.effective_lane if streamer.effective_lane is not None else 0
         return {
             "active_lane": streamer.active_lane,
-            "lane_name": ["North", "East", "South", "West"][streamer.active_lane] if streamer.active_lane is not None else "Auto-Cycle",
+            "effective_lane": streamer.effective_lane,
+            "lane_name": ["North", "East", "South", "West"][lane_idx],
+            "is_auto": streamer.active_lane is None,
             "veg_pct": round(streamer.veg_pct, 1),
             "pollution_idx": round(streamer.pollution_idx, 1),
             "risk_level": streamer.risk_level,
             "total_cars": streamer.total_cars,
+            "amb_count": streamer.amb_count,
             "timestamp": streamer.last_update
         }
 
@@ -312,7 +320,7 @@ def index():
                         </div>
                         <div class="stat-group" style="margin-bottom: 0;">
                             <span class="stat-label">Active Monitoring</span>
-                            <div class="stat-value" id="car-count">0 Cars</div>
+                            <div class="stat-value"><span id="car-count">0</span> Cars | <span id="amb-count" style="color:var(--accent-n)">0</span> Ambs</div>
                         </div>
                     </div>
 
@@ -356,8 +364,9 @@ def index():
                     fetch('/status')
                         .then(r => r.json())
                         .then(data => {
-                            document.getElementById('lane-name').innerText = data.lane_name;
-                            document.getElementById('car-count').innerText = data.total_cars + " Cars Detected";
+                            document.getElementById('lane-name').innerText = data.lane_name + (data.is_auto ? " (Auto)" : " (Locked)");
+                            document.getElementById('car-count').innerText = data.total_cars;
+                            document.getElementById('amb-count').innerText = data.amb_count;
                             
                             // Update Risk Badge
                             const riskBar = document.getElementById('risk-display');

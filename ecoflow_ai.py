@@ -342,7 +342,8 @@ def run(args: argparse.Namespace, light: TrafficLight) -> None:
                 v_pct = eco_status.vegetation_pct if eco_status else 0.0
                 p_idx = eco_status.pollution_index if eco_status else 0.0
                 r_lvl = eco_status.risk_level if eco_status else "WAITING"
-                streamer.update_status(v_pct, p_idx, r_lvl, len(tracks))
+                streamer.update_status(v_pct, p_idx, r_lvl, len(tracks), 
+                                       len(amb_state.confirmed), effective_lane)
 
             # ── 5. Visual Feedback ────────────────────────────────────────────
             if not args.no_preview or args.stream or args.calibrate:
